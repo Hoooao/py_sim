@@ -1,4 +1,7 @@
 import numpy as np
+import json
+import matplotlib.pyplot as plt
+from scipy.stats import spearmanr, pearsonr
 
 def generate_sticky_expo_dist(
     num_samples=100,
@@ -24,4 +27,29 @@ def generate_links(branching, cur_node, cur_depth):
     last_node_idx = (branching**(cur_depth+1) - 1) // (branching - 1) - 1
     return last_node_idx
 
-print(generate_links(10, 0, 2))
+# print(generate_links(10, 0, 2))
+
+def generate_dependant_group(json_file, x_group):
+    # we create a latency list that is "dependant" on the x_group
+    with open(json_file) as f:
+        config = json.load(f)
+    x_lats = config["latency_groups"][x_group]["lats"]
+    y_lats = [[int(lat * 0.2), sticky] for [lat,sticky] in x_lats]
+    #plots both
+    x = [lat for [lat, _] in x_lats]
+    x = sorted(x)
+    y = [lat for [lat, _] in y_lats]
+    y = sorted(y)
+
+    plt.plot(x, label=f"Group {x_group}")
+    plt.plot(y, label=f"Group {x_group} dependant")
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("Latency (ms)")
+    plt.title(f"Latency group {x_group} and dependant group")
+    # save the plot
+    plt.savefig(f"latency_group_{x_group}.png")
+    plt.show()
+    return y_lats
+print(generate_dependant_group("../configs/d2_b3.json", "LG1"))
+

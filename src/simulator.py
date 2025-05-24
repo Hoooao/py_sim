@@ -1,3 +1,4 @@
+import common
 from common import *
 import json
 from time import time
@@ -13,17 +14,34 @@ class Simulator:
         # make sure if two events are scheduled at the same time, 
         # they are processed in the order they were scheduled
         self._counter = itertools.count() 
-        log_info("=== Simulation init ===\n")
+        log_info("=== Simulation init ===\n", True)
+        timer.reset()
 
     def config_setup(self, config_file):
         with open(config_file) as f:
             config = json.load(f)
-        self.links = config["links"]
         self.latency_groups = {}
-        for lat_id, latencies in config["latency_groups"].items():
-            log_debug(f"Latency group {lat_id} has latencies {latencies}")
-            lg = LatencyGroup(lat_id, latencies)
+        self.links = {}
+        for lat_id, info in config["latency_groups"].items():
+            lat = info["lats"]
+            self.links[lat_id] = info["links"]
+            log_debug(f"Latency group {lat_id} has latencies {lat}")
+            lg = LatencyGroup(lat_id, lat)
             self.latency_groups[lat_id] = lg
+        
+        self.switches: dict[str, Switch] = {}
+        switch_settings = config["switch_settings"]
+        if switch_settings["enable_switch"]:
+            # get the links in each switch
+            switches_links = switch_settings["switches"]
+            per_link = switch_settings["switch_latency_incur_by_per_link"]
+            self.switch_latency_groups = {}
+            for switch_id, switch_lats in switch_settings["switch_latency_groups"].items():
+                log_debug(f"Switch {switch_id} has latencies {switch_lats}")
+                switch = Switch(switch_id, 2, switch_lats, switches_links[switch_id], per_link)
+                log_debug(f"Switch {switch_id} has links {switches_links[switch_id]}")
+                self.switches[switch_id] = switch
+        
 
         self.branching = config["branching"]
         self.depth = config["depth"]
@@ -31,7 +49,7 @@ class Simulator:
         self.nodes = {}
         self.frequency = config["frequency"]
         self.end_time = config["end_time"]
-        if config["spray"]:
+        if (not common.TESTING and config["spray"]) or (common.TESTING and common.TESTING_SPRAY):
             self.spray = True
             self.build_tree_spray()
         else:
@@ -47,8 +65,14 @@ class Simulator:
                 
         return link_to_group
 
+    def register_link_to_switch(self, link:Link):
+        for switch_id, switch in self.switches.items():
+            if (link.src.id, link.dst.id) in switch.raw_links:
+                switch.register_link(link)
+                log_info(f"{link} registered to switch {switch_id}", True)
+                
     def build_tree_no_spray(self, cur_depth, node_idx=0):
-        print(f"Building tree at depth {cur_depth} for node {node_idx}")
+        log_info(f"Building tree at depth {cur_depth} for node {node_idx}")
         if cur_depth == self.depth:
             self.nodes[node_idx] = Node(node_idx)
             return self.nodes[node_idx]
@@ -62,7 +86,8 @@ class Simulator:
             group_id = "LG0"
             if self.link_to_group_id.get((node_idx, child.id)):
                 group_id = self.link_to_group_id[(node_idx, child.id)]
-            root.connect(child, self.latency_groups[group_id])
+            link = root.connect(child, self.latency_groups[group_id])
+            self.register_link_to_switch(link)
         return root
 
     def build_tree_spray(self):
@@ -85,7 +110,8 @@ class Simulator:
                     group_id = "LG0"
                     if self.link_to_group_id.get((nodes[i][j].id, nodes[i+1][k].id)):
                         group_id = self.link_to_group_id[(nodes[i][j].id, nodes[i+1][k].id)]
-                    nodes[i][j].connect(nodes[i+1][k], self.latency_groups[group_id])
+                    link = nodes[i][j].connect(nodes[i+1][k], self.latency_groups[group_id])
+                    self.register_link_to_switch(link)
 
         # flatten nodes to self.nodes
         for i in range(len(nodes)):
@@ -132,6 +158,7 @@ class Simulator:
         log_debug(f"Node {dst} rcvd from {src} msg {msg.seq_num} latency {msg.latency} ")
         node = self.nodes[dst]
         msg.hops.append(dst)
+    
         if node.children == []:
             node.msgs.append(msg)
             log_info(f"Node {node.id} stored {msg.seq_num} total latency {msg.latency}")
@@ -145,7 +172,7 @@ class Simulator:
 
     def show_tree(self):
         for node in self.nodes.values():
-            log_debug(f"Node {node.id} has children {[child.id for child in node.children]} and messages {node.msgs}")
+            log_debug(f"Node {node.id} has children {[child.id for child in node.children]}")
     
     def run(self):
         log_info("\n\n=== Simulation start ===\n")
@@ -155,3 +182,12 @@ class Simulator:
             timer.set_to(time)
             cb(*args)
 
+    def aggergate_results(self):
+        # get the results from all nodes
+        results = {}
+        for node in self.nodes.values():
+            res = []
+            for msg in node.msgs:
+                res.append([msg.seq_num, msg.latency, msg.hops])
+            results[node.id] = res
+        return results

@@ -1,6 +1,7 @@
 from common import *
 from typing import List, Dict, Tuple
 
+
 class LatencyGroup:
     def __init__(self, group_id: int, latencies:int):
         self.id = group_id
@@ -28,14 +29,20 @@ class LatencyGroup:
         return lat
 
 class Link:
-    def __init__(self, src: int, dst: int, latency_group: LatencyGroup):
+    def __init__(self, src: 'Node', dst: 'Node', latency_group: LatencyGroup):
         self.src = src
         self.dst = dst
+        self.switch:Switch = None
         self.latency_group = latency_group
         # starting latency ptr if simply the sum of the ids
         self.latency_group.add_member((src.id, dst.id), src.id + dst.id)
+    def __str__(self):
+        return f"Link {self.src.id} -> {self.dst.id}"
     def get_latency(self):
-        return self.latency_group.get_latency((self.src.id, self.dst.id))
+        if self.switch is None:
+            return self.latency_group.get_latency((self.src.id, self.dst.id))
+        return self.latency_group.get_latency((self.src.id, self.dst.id)) \
+                    + self.switch.access(self, CONGESTION_DELAY_TIME)
 
 class Node:
     def __init__(self, node_id):
@@ -49,10 +56,10 @@ class Node:
     def connect(self, child: 'Node', latency_group: LatencyGroup):
         link = Link(self, child, latency_group)
         self.links[child.id] = link
-        print(f"Node {self.id} connected to {child.id} with latency group {latency_group.id}")
         log_debug(f"Node {self.id} connected to {child.id} with latency group {latency_group.id}")
         # uni-direction for now
         self.children.append(child)
+        return link
 
 
 

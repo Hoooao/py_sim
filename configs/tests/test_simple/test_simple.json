@@ -1,0 +1,27 @@
+{
+    "latency_groups": {
+      "LG0": {
+        "lats":[[10,1]],
+        "links": []
+      },
+      "LG1": {
+        "lats":[[13,1]],
+        "links": [[1,4],[1,5],[1,6]]
+      }
+    },
+    "switch_settings":{
+        "enable_switch": false,
+        "switch_latency_groups": {
+            "SW0": [[2,1]]
+          },
+        "switch_latency_incur_by_per_link": false
+    },
+    "frequency": 5,
+    "end_time": 50,
+    "branching": 3,
+    "depth": 2,
+    "spray": true,
+    "enable_dependant_links": true,
+    "Comments": "LG0 & 1 has mean of 50 and rep mean of 3, 2 has 70/100 and rep mean of 6, to simulate a bad subgroup"
+  }
+  
