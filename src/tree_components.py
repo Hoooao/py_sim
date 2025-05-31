@@ -14,7 +14,7 @@ class LatencyGroup:
         assert src_dst not in self.member_to_ptr, f"Latency group {self.id} already has a latency for {src_dst}"
         self.member_to_ptr[src_dst] = (start_idx % len(self.latencies), 0)
 
-    def get_latency(self, src_dst=None):
+    def get_latency(self, src_dst):
         [ptr, cur_rep] = self.member_to_ptr.get(src_dst)
         assert ptr is not None, f"Latency group {self.id} does not have a latency for {src_dst}"
         [lat, rep] = self.latencies[ptr]
@@ -27,22 +27,35 @@ class LatencyGroup:
             cur_rep += 1
             self.member_to_ptr[src_dst] = (ptr, cur_rep)
         return lat
+    def get_latency_with_ptr(self, ptr_rep):
+        [ptr, _] = ptr_rep
+        [lat, _] = self.latencies[ptr]
+        return lat
+
+    def get_ptr(self, src_dst):
+        return self.member_to_ptr.get(src_dst)
 
 class Link:
     def __init__(self, src: 'Node', dst: 'Node', latency_group: LatencyGroup):
         self.src = src
         self.dst = dst
         self.switch:Switch = None
-        self.latency_group = latency_group
-        # starting latency ptr if simply the sum of the ids
+        self.latency_group:LatencyGroup = latency_group
+        self.dependent_latency_links:List[Link] = []
+        self.dependent_latency_groups:List[LatencyGroup] = []
+        # starting latency ptr as simply the sum of the ids
         self.latency_group.add_member((src.id, dst.id), src.id + dst.id)
     def __str__(self):
         return f"Link {self.src.id} -> {self.dst.id}"
     def get_latency(self):
-        if self.switch is None:
-            return self.latency_group.get_latency((self.src.id, self.dst.id))
-        return self.latency_group.get_latency((self.src.id, self.dst.id)) \
-                    + self.switch.access(self, CONGESTION_DELAY_TIME)
+        lat = 0
+        if self.switch:
+            lat += self.switch.access(self, CONGESTION_DELAY_TIME)
+        for i, link in enumerate(self.dependent_latency_links):
+            ptr = link.latency_group.get_ptr((link.src.id, link.dst.id))
+            lat += self.dependent_latency_groups[i].get_latency_with_ptr(ptr)
+        lat += self.latency_group.get_latency((self.src.id, self.dst.id))
+        return lat
 
 class Node:
     def __init__(self, node_id):
@@ -53,12 +66,13 @@ class Node:
         # one # of branching children per set
         self.cur_childrent_set_idx = 0
 
-    def connect(self, child: 'Node', latency_group: LatencyGroup):
+    def connect(self, child: 'Node', latency_group: LatencyGroup, simulator: 'Simulator'):
         link = Link(self, child, latency_group)
         self.links[child.id] = link
         log_debug(f"Node {self.id} connected to {child.id} with latency group {latency_group.id}")
         # uni-direction for now
         self.children.append(child)
+        simulator.links[(link.src.id, link.dst.id)] = link
         return link
 
 

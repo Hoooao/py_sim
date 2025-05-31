@@ -1,0 +1,31 @@
+{
+    "latency_groups": {
+      "LG0": {
+        "lats":[[10,1]],
+        "links": []
+      },
+      "LG1": {
+        "lats":[[11,1],[15,1],[18,1],[22,2],[25,1],[29,1]],
+        "links": [[1,4],[1,5],[1,6]]
+      }
+    },
+    "switch_settings":{
+        "enable_switch": false
+    },
+    "dependent_groups":{
+        "DEP_LG1":{
+          "dependent_group":"LG1",
+          "link_pairs":[[[1,4],[2,7]]],
+          "lats":[[2, 1], [3, 1], [3, 1], [4, 2], [5, 1], [5, 1]],
+          "comments": "pair with link in target group: [dep, depee]. dep follows the pointer of the depee link" 
+        }
+    },
+    "frequency": 5,
+    "end_time": 70,
+    "branching": 3,
+    "depth": 2,
+    "spray": true,
+    "enable_dependent_links": true,
+    "Comments": "LG0 & 1 has mean of 50 and rep mean of 3, 2 has 70/100 and rep mean of 6, to simulate a bad subgroup"
+  }
+  

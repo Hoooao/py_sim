@@ -26,6 +26,9 @@ class Message:
         self.latency = 0
         self.start_time = 0
         self.hops = []
+        
+    def __lt__(self, other):
+        return self.latency < other.latency
 
 class ActiveEntity:
     def __init__(self, length):
@@ -131,7 +134,7 @@ class Timer:
 
 timer = Timer()
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(message)s')
 logger = logging.getLogger("sim")
 

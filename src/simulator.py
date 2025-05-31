@@ -7,29 +7,24 @@ from tree_components import *
 import itertools
 from copy import deepcopy
 
+
 class Simulator:
     def __init__(self, log_file=f"sim_log_{int(time())}.txt"):
         self.event_queue = []
         self.log_file = log_file
+        self.links = {}
+        self.receiver_number = 0
+        # seq:count of received
+        self.log = {}
         # make sure if two events are scheduled at the same time, 
         # they are processed in the order they were scheduled
         self._counter = itertools.count() 
         log_info("=== Simulation init ===\n", True)
         timer.reset()
 
-    def config_setup(self, config_file):
-        with open(config_file) as f:
-            config = json.load(f)
-        self.latency_groups = {}
-        self.links = {}
-        for lat_id, info in config["latency_groups"].items():
-            lat = info["lats"]
-            self.links[lat_id] = info["links"]
-            log_debug(f"Latency group {lat_id} has latencies {lat}")
-            lg = LatencyGroup(lat_id, lat)
-            self.latency_groups[lat_id] = lg
-        
-        self.switches: dict[str, Switch] = {}
+    def setup_switches(self, config):
+        if not config.get("switch_settings"):
+            return
         switch_settings = config["switch_settings"]
         if switch_settings["enable_switch"]:
             # get the links in each switch
@@ -41,14 +36,49 @@ class Simulator:
                 switch = Switch(switch_id, 2, switch_lats, switches_links[switch_id], per_link)
                 log_debug(f"Switch {switch_id} has links {switches_links[switch_id]}")
                 self.switches[switch_id] = switch
-        
 
+    def setup_dependent_links(self, config):
+        if not config.get("dependent_groups") or not config["dependent_groups_enabled"]:
+            return
+        dep_groups = config["dependent_groups"]
+        for group_id, group in dep_groups.items():
+            depend_on = group["dependent_group"]
+            lats = group["lats"]
+            log_debug(f"Group {group_id} depends on {depend_on}")
+            log_debug(f"Group {group_id} has latencies {lats}")
+            dep_group = LatencyGroup(group_id, lats)
+            for [[depee_src,depee_dst], [dep_src,dep_dst]] in group["link_pairs"]:
+                if self.links.get((dep_src, dep_dst)) is None:
+                    log_debug(f"Link {dep_src} -> {dep_dst} not found")
+                    continue
+                log_debug(f"Link {dep_src} -> {dep_dst} depends on {depee_src} -> {depee_dst}")
+                self.links[(dep_src, dep_dst)].dependent_latency_links.append(self.links[(depee_src, depee_dst)])
+                self.links[(dep_src, dep_dst)].dependent_latency_groups.append(dep_group)
+                
+
+    def config_setup(self, config_file):
+        with open(config_file) as f:
+            config = json.load(f)
+        self.nodes = {}
+        self.latency_groups = {}
+        self.lat_group_to_links = {}
+        self.switches: dict[str, Switch] = {}
         self.branching = config["branching"]
         self.depth = config["depth"]
-        self.link_to_group_id = self.get_link_to_group_id()
-        self.nodes = {}
         self.frequency = config["frequency"]
         self.end_time = config["end_time"]
+        self.receiver_number = self.branching ** self.depth
+        for lat_id, info in config["latency_groups"].items():
+            lat = info["lats"]
+            self.lat_group_to_links[lat_id] = info["links"]
+            log_debug(f"Latency group {lat_id} has latencies {lat}")
+            lg = LatencyGroup(lat_id, lat)
+            self.latency_groups[lat_id] = lg
+
+        self.setup_switches(config)
+        
+        self.link_to_group_id = self.get_link_to_group_id()
+        
         if (not common.TESTING and config["spray"]) or (common.TESTING and common.TESTING_SPRAY):
             self.spray = True
             self.build_tree_spray()
@@ -56,9 +86,11 @@ class Simulator:
             self.spray = False
             self.build_tree_no_spray(0,0)
 
+        self.setup_dependent_links(config)
+
     def get_link_to_group_id(self):
         link_to_group = {}
-        for group_id, links in self.links.items():
+        for group_id, links in self.lat_group_to_links.items():
             log_debug(f"Group {group_id} has links {links}")
             for [src,dst] in links:
                 link_to_group[(src,dst)] = group_id
@@ -86,7 +118,7 @@ class Simulator:
             group_id = "LG0"
             if self.link_to_group_id.get((node_idx, child.id)):
                 group_id = self.link_to_group_id[(node_idx, child.id)]
-            link = root.connect(child, self.latency_groups[group_id])
+            link = root.connect(child, self.latency_groups[group_id], simulator = self)
             self.register_link_to_switch(link)
         return root
 
@@ -110,7 +142,7 @@ class Simulator:
                     group_id = "LG0"
                     if self.link_to_group_id.get((nodes[i][j].id, nodes[i+1][k].id)):
                         group_id = self.link_to_group_id[(nodes[i][j].id, nodes[i+1][k].id)]
-                    link = nodes[i][j].connect(nodes[i+1][k], self.latency_groups[group_id])
+                    link = nodes[i][j].connect(nodes[i+1][k], self.latency_groups[group_id], simulator = self)
                     self.register_link_to_switch(link)
 
         # flatten nodes to self.nodes
@@ -161,7 +193,14 @@ class Simulator:
     
         if node.children == []:
             node.msgs.append(msg)
-            log_info(f"Node {node.id} stored {msg.seq_num} total latency {msg.latency}")
+            log_debug(f"Node {node.id} stored {msg.seq_num} total latency {msg.latency}")
+            if self.log.get(msg.seq_num) is None:
+                self.log[msg.seq_num] = 1
+            else:
+                self.log[msg.seq_num] += 1
+            if self.log[msg.seq_num] == self.receiver_number:
+                log_info(f"Node {node.id} stored {msg.seq_num} total max latency {msg.latency}")
+
             #log_info(f"Hops: {msg.hops}")
             assert msg.latency == timer.current_time - msg.start_time, f"Node {node.id} has latency {msg.latency} but current time is {timer.get_time()} and start time is {msg.start_time}"
             return
