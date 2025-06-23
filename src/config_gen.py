@@ -40,7 +40,7 @@ def generate_dependant_group(json_file, x_group):
     with open(json_file) as f:
         config = json.load(f)
     x_lats = config["latency_groups"][x_group]["lats"]
-    y_lats = [[int(lat * 0.9), sticky] for [lat,sticky] in x_lats]
+    y_lats = [[int(lat * 0.5), sticky] for [lat,sticky] in x_lats]
     #plots both
     x = [lat for [lat, _] in x_lats]
     x = sorted(x)
@@ -62,25 +62,29 @@ def generate_dependant_group(json_file, x_group):
        j += 1
        if j % 10 == 0:
         print()
-generate_dependant_group("../configs/d3_b10_dependent.json", "LG2")
+#generate_dependant_group("../configs/d3_b10_dependent.json", "LG2")
 
 def gen_link_pairs():
     i = 11
     j = 111
     x = 121
     cnt = 1
-    ls = [i,j]
+    ls = [[i,j]]
     while x <= 1101:
         print(f"[[{i},{j}], [{i},{x}]], ")
-        if cnt == 4:
-            j +=50
+        if cnt == 1:
+            j +=20
             ls.append([i,j])
             x = j
             cnt = 0
         x += 10
         cnt += 1
-    print(ls)
-#gen_link_pairs()
+    
+    for i, e in enumerate(ls):
+        if i % 10 == 0 and i != 0:
+            print()
+        print(f"[{e[0]},{e[1]}], ", end="")
+gen_link_pairs()
 
 def check_mean():
     ls = []
@@ -99,7 +103,7 @@ def gen_links():
             j += 10
         print()
         j += 100
-
+#gen_links()
 
 import re
 def extract_latencies(filename):

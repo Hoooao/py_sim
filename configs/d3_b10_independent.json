@@ -43,6 +43,6 @@
   "end_time": 5000,
   "branching": 10,
   "depth": 3,
-  "spray": true,
+  "spray": false,
   "Comments": "LG0 & 1 has mean of 50 and rep mean of 3, 2 has 500 and rep mean of 3, to simulate a bad subgroup"
 }
